@@ -1,7 +1,6 @@
 //! A lock-free skip list. See [`SkipList`].
 
 use alloc::alloc::{alloc, dealloc, handle_alloc_error, Layout};
-use core::borrow::Borrow;
 use core::cmp;
 use core::fmt;
 use core::marker::PhantomData;
@@ -12,6 +11,7 @@ use core::sync::atomic::{fence, AtomicUsize, Ordering};
 
 use crate::epoch::{self, Atomic, Collector, Guard, Shared};
 use crate::utils::CachePadded;
+use crate::Comparable;
 
 /// Number of bits needed to store height.
 const HEIGHT_BITS: usize = 5;
@@ -403,8 +403,8 @@ where
     /// Returns `true` if the map contains a value for the specified key.
     pub fn contains_key<Q>(&self, key: &Q, guard: &Guard) -> bool
     where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
+        K: Comparable<Q>,
+        Q: ?Sized,
     {
         self.get(key, guard).is_some()
     }
@@ -412,12 +412,12 @@ where
     /// Returns an entry with the specified `key`.
     pub fn get<'a: 'g, 'g, Q>(&'a self, key: &Q, guard: &'g Guard) -> Option<Entry<'a, 'g, K, V>>
     where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
+        K: Comparable<Q>,
+        Q: ?Sized,
     {
         self.check_guard(guard);
         let n = self.search_bound(Bound::Included(key), false, guard)?;
-        if n.key.borrow() != key {
+        if !n.key.equivalent(key) {
             return None;
         }
         Some(Entry {
@@ -436,8 +436,8 @@ where
         guard: &'g Guard,
     ) -> Option<Entry<'a, 'g, K, V>>
     where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
+        K: Comparable<Q>,
+        Q: ?Sized,
     {
         self.check_guard(guard);
         let n = self.search_bound(bound, false, guard)?;
@@ -457,8 +457,8 @@ where
         guard: &'g Guard,
     ) -> Option<Entry<'a, 'g, K, V>>
     where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
+        K: Comparable<Q>,
+        Q: ?Sized,
     {
         self.check_guard(guard);
         let n = self.search_bound(bound, true, guard)?;
@@ -516,9 +516,9 @@ where
         guard: &'g Guard,
     ) -> Range<'a, 'g, Q, R, K, V>
     where
-        K: Borrow<Q>,
+        K: Comparable<Q>,
         R: RangeBounds<Q>,
-        Q: Ord + ?Sized,
+        Q: ?Sized,
     {
         self.check_guard(guard);
         Range {
@@ -535,9 +535,9 @@ where
     #[allow(clippy::needless_lifetimes)]
     pub fn ref_range<'a, Q, R>(&'a self, range: R) -> RefRange<'a, Q, R, K, V>
     where
-        K: Borrow<Q>,
+        K: Comparable<Q>,
         R: RangeBounds<Q>,
-        Q: Ord + ?Sized,
+        Q: ?Sized,
     {
         RefRange {
             parent: self,
@@ -679,8 +679,8 @@ where
         guard: &'a Guard,
     ) -> Option<&'a Node<K, V>>
     where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
+        K: Comparable<Q>,
+        Q: ?Sized,
     {
         unsafe {
             'search: loop {
@@ -738,11 +738,11 @@ where
                         // bound, we return the last node before the condition became true. For the
                         // lower bound, we return the first node after the condition became true.
                         if upper_bound {
-                            if !below_upper_bound(&bound, c.key.borrow()) {
+                            if !below_upper_bound(bound, &c.key) {
                                 break;
                             }
                             result = Some(c);
-                        } else if above_lower_bound(&bound, c.key.borrow()) {
+                        } else if above_lower_bound(bound, &c.key) {
                             result = Some(c);
                             break;
                         }
@@ -761,8 +761,8 @@ where
     /// Searches for a key in the skip list and returns a list of all adjacent nodes.
     fn search_position<'a, Q>(&'a self, key: &Q, guard: &'a Guard) -> Position<'a, K, V>
     where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
+        K: Comparable<Q>,
+        Q: ?Sized,
     {
         unsafe {
             'search: loop {
@@ -819,7 +819,7 @@ where
 
                         // If `curr` contains a key that is greater than or equal to `key`, we're
                         // done with this level.
-                        match c.key.borrow().cmp(key) {
+                        match c.key.compare(key) {
                             cmp::Ordering::Greater => break,
                             cmp::Ordering::Equal => {
                                 result.found = Some(c);
@@ -1088,8 +1088,8 @@ where
     /// Removes an entry with the specified `key` from the map and returns it.
     pub fn remove<Q>(&self, key: &Q, guard: &Guard) -> Option<RefEntry<'_, K, V>>
     where
-        K: Borrow<Q>,
-        Q: Ord + ?Sized,
+        K: Comparable<Q>,
+        Q: ?Sized,
     {
         self.check_guard(guard);
 
@@ -1780,9 +1780,9 @@ impl<'a, K: 'a, V: 'a> RefIter<'a, K, V> {
 /// An iterator over a subset of entries of a `SkipList`.
 pub struct Range<'a: 'g, 'g, Q, R, K, V>
 where
-    K: Ord + Borrow<Q>,
+    K: Ord + Comparable<Q>,
     R: RangeBounds<Q>,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     parent: &'a SkipList<K, V>,
     head: Option<&'g Node<K, V>>,
@@ -1794,9 +1794,9 @@ where
 
 impl<'a: 'g, 'g, Q, R, K: 'a, V: 'a> Iterator for Range<'a, 'g, Q, R, K, V>
 where
-    K: Ord + Borrow<Q>,
+    K: Ord + Comparable<Q>,
     R: RangeBounds<Q>,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     type Item = Entry<'a, 'g, K, V>;
 
@@ -1810,11 +1810,11 @@ where
                 .search_bound(self.range.start_bound(), false, self.guard),
         };
         if let Some(h) = self.head {
-            let bound = match self.tail {
-                Some(t) => Bound::Excluded(t.key.borrow()),
-                None => self.range.end_bound(),
+            let below = match self.tail {
+                Some(t) => below_upper_bound(Bound::Excluded(&t.key), &h.key),
+                None => below_upper_bound(self.range.end_bound(), &h.key),
             };
-            if !below_upper_bound(&bound, h.key.borrow()) {
+            if !below {
                 self.head = None;
                 self.tail = None;
             }
@@ -1829,25 +1829,25 @@ where
 
 impl<'a: 'g, 'g, Q, R, K: 'a, V: 'a> DoubleEndedIterator for Range<'a, 'g, Q, R, K, V>
 where
-    K: Ord + Borrow<Q>,
+    K: Ord + Comparable<Q>,
     R: RangeBounds<Q>,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     fn next_back(&mut self) -> Option<Entry<'a, 'g, K, V>> {
         self.tail = match self.tail {
             Some(n) => self
                 .parent
-                .search_bound(Bound::Excluded(n.key.borrow()), true, self.guard),
+                .search_bound::<K>(Bound::Excluded(&n.key), true, self.guard),
             None => self
                 .parent
                 .search_bound(self.range.end_bound(), true, self.guard),
         };
         if let Some(t) = self.tail {
-            let bound = match self.head {
-                Some(h) => Bound::Excluded(h.key.borrow()),
-                None => self.range.start_bound(),
+            let above = match self.head {
+                Some(h) => above_lower_bound(Bound::Excluded(&h.key), &t.key),
+                None => above_lower_bound(self.range.start_bound(), &t.key),
             };
-            if !above_lower_bound(&bound, t.key.borrow()) {
+            if !above {
                 self.head = None;
                 self.tail = None;
             }
@@ -1862,10 +1862,10 @@ where
 
 impl<Q, R, K, V> fmt::Debug for Range<'_, '_, Q, R, K, V>
 where
-    K: Ord + Borrow<Q> + fmt::Debug,
+    K: Ord + Comparable<Q> + fmt::Debug,
     V: fmt::Debug,
     R: RangeBounds<Q> + fmt::Debug,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Range")
@@ -1879,9 +1879,9 @@ where
 /// An iterator over reference-counted subset of entries of a `SkipList`.
 pub struct RefRange<'a, Q, R, K, V>
 where
-    K: Ord + Borrow<Q>,
+    K: Ord + Comparable<Q>,
     R: RangeBounds<Q>,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     parent: &'a SkipList<K, V>,
     pub(crate) head: Option<RefEntry<'a, K, V>>,
@@ -1892,26 +1892,26 @@ where
 
 unsafe impl<Q, R, K, V> Send for RefRange<'_, Q, R, K, V>
 where
-    K: Ord + Borrow<Q>,
+    K: Ord + Comparable<Q>,
     R: RangeBounds<Q>,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
 }
 
 unsafe impl<Q, R, K, V> Sync for RefRange<'_, Q, R, K, V>
 where
-    K: Ord + Borrow<Q>,
+    K: Ord + Comparable<Q>,
     R: RangeBounds<Q>,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
 }
 
 impl<Q, R, K, V> fmt::Debug for RefRange<'_, Q, R, K, V>
 where
-    K: Ord + Borrow<Q> + fmt::Debug,
+    K: Ord + Comparable<Q> + fmt::Debug,
     V: fmt::Debug,
     R: RangeBounds<Q> + fmt::Debug,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RefRange")
@@ -1924,9 +1924,9 @@ where
 
 impl<'a, Q, R, K: 'a, V: 'a> RefRange<'a, Q, R, K, V>
 where
-    K: Ord + Borrow<Q>,
+    K: Ord + Comparable<Q>,
     R: RangeBounds<Q>,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     /// Advances the iterator and returns the next value.
     pub fn next(&mut self, guard: &Guard) -> Option<RefEntry<'a, K, V>> {
@@ -1937,11 +1937,11 @@ where
         };
 
         if let Some(ref h) = next_head {
-            let bound = match self.tail {
-                Some(ref t) => Bound::Excluded(t.key().borrow()),
-                None => self.range.end_bound(),
+            let below = match self.tail {
+                Some(ref t) => below_upper_bound(Bound::Excluded(t.key()), h.key()),
+                None => below_upper_bound(self.range.end_bound(), h.key()),
             };
-            if below_upper_bound(&bound, h.key().borrow()) {
+            if below {
                 self.head = next_head.clone();
                 next_head
             } else {
@@ -1964,11 +1964,11 @@ where
         };
 
         if let Some(ref t) = next_tail {
-            let bound = match self.head {
-                Some(ref h) => Bound::Excluded(h.key().borrow()),
-                None => self.range.start_bound(),
+            let above = match self.head {
+                Some(ref h) => above_lower_bound(Bound::Excluded(h.key()), t.key()),
+                None => above_lower_bound(self.range.start_bound(), t.key()),
             };
-            if above_lower_bound(&bound, t.key().borrow()) {
+            if above {
                 self.tail = next_tail.clone();
                 next_tail
             } else {
@@ -2076,19 +2076,27 @@ where
 }
 
 /// Helper function to check if a value is above a lower bound
-fn above_lower_bound<T: Ord + ?Sized>(bound: &Bound<&T>, other: &T) -> bool {
-    match *bound {
+fn above_lower_bound<K, Q>(bound: Bound<&Q>, other: &K) -> bool
+where
+    K: Comparable<Q>,
+    Q: ?Sized,
+{
+    match bound {
         Bound::Unbounded => true,
-        Bound::Included(key) => other >= key,
-        Bound::Excluded(key) => other > key,
+        Bound::Included(key) => other.compare_ge(key),
+        Bound::Excluded(key) => other.compare_gt(key),
     }
 }
 
 /// Helper function to check if a value is below an upper bound
-fn below_upper_bound<T: Ord + ?Sized>(bound: &Bound<&T>, other: &T) -> bool {
-    match *bound {
+fn below_upper_bound<K, Q>(bound: Bound<&Q>, other: &K) -> bool
+where
+    K: Comparable<Q>,
+    Q: ?Sized,
+{
+    match bound {
         Bound::Unbounded => true,
-        Bound::Included(key) => other <= key,
-        Bound::Excluded(key) => other < key,
+        Bound::Included(key) => other.compare_le(key),
+        Bound::Excluded(key) => other.compare_lt(key),
     }
 }

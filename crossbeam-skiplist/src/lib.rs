@@ -270,3 +270,83 @@ cfg_if! {
         pub use crate::set::SkipSet;
     }
 }
+
+// NOTE: We ultimately want these traits to come from the `equivalent` crate,
+// but that design is still being refined. `Equivalent` has been defined in
+// `indexmap` for a long time, but `Comparable` is brand new, and it seems that
+// reversed `K: Comparable<Q>` works better than `Q: Comparable<K>`.
+
+use core::borrow::Borrow;
+use core::cmp::Ordering;
+
+/// Key equivalence trait.
+///
+/// This trait allows hash table lookup to be customized. It has one blanket
+/// implementation that uses the regular solution with `Borrow` and `Eq`, just
+/// like `HashMap` does, so that you can pass `&str` to lookup into a map with
+/// `String` keys and so on.
+///
+/// # Contract
+///
+/// The implementor **must** hash like `Q`, if it is hashable.
+pub trait Equivalent<Q: ?Sized> {
+    /// Compare self to `key` and return `true` if they are equal.
+    fn equivalent(&self, key: &Q) -> bool;
+}
+
+impl<K: ?Sized, Q: ?Sized> Equivalent<Q> for K
+where
+    K: Borrow<Q>,
+    Q: Eq,
+{
+    #[inline]
+    fn equivalent(&self, key: &Q) -> bool {
+        PartialEq::eq(self.borrow(), key)
+    }
+}
+
+/// Key ordering trait.
+///
+/// This trait allows ordered map lookup to be customized. It has one blanket
+/// implementation that uses the regular solution with `Borrow` and `Ord`, just
+/// like `BTreeMap` does, so that you can pass `&str` to lookup into a map with
+/// `String` keys and so on.
+pub trait Comparable<Q: ?Sized>: Equivalent<Q> {
+    /// Compare self to `key` and return their ordering.
+    fn compare(&self, key: &Q) -> Ordering;
+
+    /// Returns `true` if self compares less than `key`
+    #[inline]
+    fn compare_lt(&self, key: &Q) -> bool {
+        matches!(self.compare(key), Ordering::Less)
+    }
+
+    /// Returns `true` if self compares less than or equal to `key`
+    #[inline]
+    fn compare_le(&self, key: &Q) -> bool {
+        !matches!(self.compare(key), Ordering::Greater)
+    }
+
+    /// Returns `true` if self compares greater than or equal to `key`
+    #[inline]
+    fn compare_ge(&self, key: &Q) -> bool {
+        !matches!(self.compare(key), Ordering::Less)
+    }
+
+    /// Returns `true` if self compares greater than `key`
+    #[inline]
+    fn compare_gt(&self, key: &Q) -> bool {
+        matches!(self.compare(key), Ordering::Greater)
+    }
+}
+
+impl<K: ?Sized, Q: ?Sized> Comparable<Q> for K
+where
+    K: Borrow<Q>,
+    Q: Ord,
+{
+    #[inline]
+    fn compare(&self, key: &Q) -> Ordering {
+        Ord::cmp(self.borrow(), key)
+    }
+}

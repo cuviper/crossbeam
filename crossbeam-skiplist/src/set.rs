@@ -1,12 +1,12 @@
 //! A set based on a lock-free skip list. See [`SkipSet`].
 
-use std::borrow::Borrow;
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::Deref;
 use std::ops::{Bound, RangeBounds};
 
 use crate::map;
+use crate::Comparable;
 
 /// A set based on a lock-free skip list.
 ///
@@ -123,8 +123,8 @@ where
     /// ```
     pub fn contains<Q>(&self, key: &Q) -> bool
     where
-        T: Borrow<Q>,
-        Q: Ord + ?Sized,
+        T: Comparable<Q>,
+        Q: ?Sized,
     {
         self.inner.contains_key(key)
     }
@@ -142,8 +142,8 @@ where
     /// ```
     pub fn get<Q>(&self, key: &Q) -> Option<Entry<'_, T>>
     where
-        T: Borrow<Q>,
-        Q: Ord + ?Sized,
+        T: Comparable<Q>,
+        Q: ?Sized,
     {
         self.inner.get(key).map(Entry::new)
     }
@@ -174,8 +174,8 @@ where
     /// ```
     pub fn lower_bound<'a, Q>(&'a self, bound: Bound<&Q>) -> Option<Entry<'a, T>>
     where
-        T: Borrow<Q>,
-        Q: Ord + ?Sized,
+        T: Comparable<Q>,
+        Q: ?Sized,
     {
         self.inner.lower_bound(bound).map(Entry::new)
     }
@@ -203,8 +203,8 @@ where
     /// ```
     pub fn upper_bound<'a, Q>(&'a self, bound: Bound<&Q>) -> Option<Entry<'a, T>>
     where
-        T: Borrow<Q>,
-        Q: Ord + ?Sized,
+        T: Comparable<Q>,
+        Q: ?Sized,
     {
         self.inner.upper_bound(bound).map(Entry::new)
     }
@@ -267,9 +267,9 @@ where
     /// ```
     pub fn range<Q, R>(&self, range: R) -> Range<'_, Q, R, T>
     where
-        T: Borrow<Q>,
+        T: Comparable<Q>,
         R: RangeBounds<Q>,
-        Q: Ord + ?Sized,
+        Q: ?Sized,
     {
         Range {
             inner: self.inner.range(range),
@@ -316,8 +316,8 @@ where
     /// ```
     pub fn remove<Q>(&self, key: &Q) -> Option<Entry<'_, T>>
     where
-        T: Borrow<Q>,
-        Q: Ord + ?Sized,
+        T: Comparable<Q>,
+        Q: ?Sized,
     {
         self.inner.remove(key).map(Entry::new)
     }
@@ -583,18 +583,18 @@ impl<T> fmt::Debug for Iter<'_, T> {
 /// An iterator over a subset of entries of a `SkipSet`.
 pub struct Range<'a, Q, R, T>
 where
-    T: Ord + Borrow<Q>,
+    T: Ord + Comparable<Q>,
     R: RangeBounds<Q>,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     inner: map::Range<'a, Q, R, T, ()>,
 }
 
 impl<'a, Q, R, T> Iterator for Range<'a, Q, R, T>
 where
-    T: Ord + Borrow<Q>,
+    T: Ord + Comparable<Q>,
     R: RangeBounds<Q>,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     type Item = Entry<'a, T>;
 
@@ -605,9 +605,9 @@ where
 
 impl<'a, Q, R, T> DoubleEndedIterator for Range<'a, Q, R, T>
 where
-    T: Ord + Borrow<Q>,
+    T: Ord + Comparable<Q>,
     R: RangeBounds<Q>,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     fn next_back(&mut self) -> Option<Entry<'a, T>> {
         self.inner.next_back().map(Entry::new)
@@ -616,9 +616,9 @@ where
 
 impl<Q, R, T> fmt::Debug for Range<'_, Q, R, T>
 where
-    T: Ord + Borrow<Q> + fmt::Debug,
+    T: Ord + Comparable<Q> + fmt::Debug,
     R: RangeBounds<Q> + fmt::Debug,
-    Q: Ord + ?Sized,
+    Q: ?Sized,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Range")
